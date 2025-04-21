@@ -1,212 +1,156 @@
 
-
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
+local InputService = game:GetService("UserInputService")
 
-local Library = {}
-Library.Theme = {
-    Background = Color3.fromRGB(24, 24, 24),
-    Outline = Color3.fromRGB(0, 0, 0),
-    Accent = Color3.fromRGB(0, 170, 255),
-    Text = Color3.fromRGB(255, 255, 255),
-    SubText = Color3.fromRGB(150, 150, 150)
+local UI = {
+    Objects = {},
+    Connections = {},
+    Window = {},
+    Visible = true
 }
 
-local DrawingObjects = {}
-local ActiveDropdown = nil
+local mouse = game:GetService("Players").LocalPlayer:GetMouse()
 
-local function DrawObject(t)
-    local obj = Drawing.new(t.Type)
-    for prop, val in pairs(t) do
-        if prop ~= "Type" then
-            obj[prop] = val
-        end
-    end
-    table.insert(DrawingObjects, obj)
-    return obj
-end
+local function createWindow(name)
+    local title = Drawing.new("Text")
+    title.Text = name
+    title.Size = 20
+    title.Color = Color3.fromRGB(255,255,255)
+    title.Position = Vector2.new(100, 100)
+    title.Center = false
+    title.Outline = true
 
-function Library:CreateWindow(title)
-    local self = {}
-    self.Title = title or "Lua God UI"
-    self.Visible = true
-    self.Tabs = {}
-    self.Dragging = false
+    local bg = Drawing.new("Square")
+    bg.Size = Vector2.new(400, 300)
+    bg.Position = Vector2.new(100, 120)
+    bg.Color = Color3.fromRGB(30, 30, 30)
+    bg.Filled = true
+    bg.Transparency = 0.9
 
-    self.Frame = DrawObject({Type = "Square", Size = Vector2.new(500, 400), Position = Vector2.new(300, 200), Color = Library.Theme.Background, Thickness = 1, Filled = true})
-    self.Outline = DrawObject({Type = "Square", Size = Vector2.new(500, 400), Position = Vector2.new(300, 200), Color = Library.Theme.Outline, Thickness = 2, Filled = false})
-    self.Topbar = DrawObject({Type = "Square", Size = Vector2.new(500, 30), Position = Vector2.new(300, 200), Color = Library.Theme.Accent, Filled = true})
-    self.TitleText = DrawObject({Type = "Text", Position = Vector2.new(305, 205), Text = self.Title, Color = Library.Theme.Text, Size = 17, Center = false, Outline = true})
+    local dragging = false
+    local dragOffset = Vector2.new()
 
-    local tabY = 240
-    function self:AddTab(name)
-        local tab = {}
-        tab.Name = name
-        tab.Button = DrawObject({Type = "Text", Position = Vector2.new(310, tabY), Text = name, Size = 15, Color = Library.Theme.SubText, Outline = true, Center = false})
-        tabY = tabY + 25
-        tab.Visible = false
-        tab.Sections = {}
-
-        function tab:SetVisible(bool)
-            for _, s in pairs(tab.Sections) do
-                for _, obj in pairs(s.Objects) do
-                    obj.Visible = bool
-                end
-            end
-            tab.Visible = bool
-        end
-
-        function tab:AddSection(name)
-            local section = {}
-            section.Name = name
-            section.Objects = {}
-            local offsetY = 265
-
-            local label = DrawObject({Type = "Text", Position = Vector2.new(420, offsetY), Text = name, Size = 16, Color = Library.Theme.Text, Outline = true})
-            table.insert(section.Objects, label)
-            offsetY = offsetY + 25
-
-            function section:AddToggle(text, callback)
-                local state = false
-                local box = DrawObject({Type = "Square", Size = Vector2.new(12, 12), Position = Vector2.new(420, offsetY), Color = Library.Theme.Outline, Filled = false})
-                local label = DrawObject({Type = "Text", Position = Vector2.new(440, offsetY - 2), Text = text, Size = 14, Color = Library.Theme.Text, Outline = true})
-                table.insert(section.Objects, box)
-                table.insert(section.Objects, label)
-
-                UserInputService.InputBegan:Connect(function(input)
-                    local mouse = UserInputService:GetMouseLocation()
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                        if mouse.X >= box.Position.X and mouse.X <= box.Position.X + box.Size.X and
-                           mouse.Y >= box.Position.Y and mouse.Y <= box.Position.Y + box.Size.Y then
-                            state = not state
-                            box.Filled = state
-                            if callback then callback(state) end
-                        end
-                    end
-                end)
-
-                offsetY = offsetY + 20
-            end
-
-            function section:AddSlider(text, min, max, default, callback)
-                local bar = DrawObject({Type = "Square", Size = Vector2.new(100, 4), Position = Vector2.new(420, offsetY + 10), Color = Library.Theme.Accent, Filled = true})
-                local label = DrawObject({Type = "Text", Position = Vector2.new(420, offsetY - 2), Text = text .. ": " .. default, Size = 14, Color = Library.Theme.Text, Outline = true})
-                table.insert(section.Objects, bar)
-                table.insert(section.Objects, label)
-
-                UserInputService.InputBegan:Connect(function(input)
-                    local mouse = UserInputService:GetMouseLocation()
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                        if mouse.X >= bar.Position.X and mouse.X <= bar.Position.X + bar.Size.X and
-                           mouse.Y >= bar.Position.Y and mouse.Y <= bar.Position.Y + 10 then
-                            local val = math.floor(((mouse.X - bar.Position.X) / bar.Size.X) * (max - min) + min)
-                            label.Text = text .. ": " .. val
-                            if callback then callback(val) end
-                        end
-                    end
-                end)
-
-                offsetY = offsetY + 30
-            end
-
-            function section:AddDropdown(text, options, default, callback)
-                local selected = default or options[1]
-                local label = DrawObject({Type = "Text", Position = Vector2.new(420, offsetY - 2), Text = text .. ": " .. selected, Size = 14, Color = Library.Theme.Text, Outline = true})
-                table.insert(section.Objects, label)
-
-                local dropVisible = false
-                local dropButtons = {}
-
-                local function hideDropdown()
-                    for _, d in pairs(dropButtons) do d:Remove() end
-                    dropButtons = {}
-                    dropVisible = false
-                    ActiveDropdown = nil
-                end
-
-                UserInputService.InputBegan:Connect(function(input)
-                    local mouse = UserInputService:GetMouseLocation()
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                        if mouse.X >= label.Position.X and mouse.X <= label.Position.X + 120 and
-                           mouse.Y >= label.Position.Y and mouse.Y <= label.Position.Y + 14 then
-                            if dropVisible then
-                                hideDropdown()
-                            else
-                                dropVisible = true
-                                ActiveDropdown = hideDropdown
-                                for i, opt in pairs(options) do
-                                    local btn = DrawObject({
-                                        Type = "Text",
-                                        Position = Vector2.new(420, offsetY + (i * 15)),
-                                        Text = opt,
-                                        Size = 14,
-                                        Color = Library.Theme.SubText,
-                                        Outline = true
-                                    })
-                                    table.insert(dropButtons, btn)
-
-                                    task.spawn(function()
-                                        UserInputService.InputBegan:Connect(function(input)
-                                            local m = UserInputService:GetMouseLocation()
-                                            if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                                                if m.X >= btn.Position.X and m.X <= btn.Position.X + 100 and
-                                                   m.Y >= btn.Position.Y and m.Y <= btn.Position.Y + 15 then
-                                                    selected = opt
-                                                    label.Text = text .. ": " .. selected
-                                                    hideDropdown()
-                                                    if callback then callback(selected) end
-                                                end
-                                            end
-                                        end)
-                                    end)
-                                end
-                            end
-                        else
-                            if ActiveDropdown then
-                                ActiveDropdown()
-                            end
-                        end
-                    end
-                end)
-
-                offsetY = offsetY + 30
-            end
-
-            table.insert(tab.Sections, section)
-            return section
-        end
-
-        table.insert(self.Tabs, tab)
-        return tab
-    end
-
-    -- Drag
-    UserInputService.InputBegan:Connect(function(input)
+    InputService.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            local mouse = UserInputService:GetMouseLocation()
-            if mouse.X >= self.Topbar.Position.X and mouse.X <= self.Topbar.Position.X + self.Topbar.Size.X and
-               mouse.Y >= self.Topbar.Position.Y and mouse.Y <= self.Topbar.Position.Y + self.Topbar.Size.Y then
-                self.Dragging = true
+            if mouse.X > bg.Position.X and mouse.X < bg.Position.X + bg.Size.X and
+               mouse.Y > bg.Position.Y and mouse.Y < bg.Position.Y + 25 then
+                dragging = true
+                dragOffset = Vector2.new(mouse.X, mouse.Y) - bg.Position
             end
         end
     end)
-    UserInputService.InputEnded:Connect(function(input)
+
+    InputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            self.Dragging = false
+            dragging = false
         end
     end)
+
     RunService.RenderStepped:Connect(function()
-        if self.Dragging then
-            local mouse = UserInputService:GetMouseLocation()
-            local newPos = Vector2.new(mouse.X - 250, mouse.Y - 15)
-            self.Frame.Position = newPos
-            self.Outline.Position = newPos
-            self.Topbar.Position = newPos
-            self.TitleText.Position = newPos + Vector2.new(5, 5)
+        if dragging then
+            local newPos = Vector2.new(mouse.X, mouse.Y) - dragOffset
+            bg.Position = newPos
+            title.Position = newPos - Vector2.new(0, 20)
         end
     end)
 
-    return self
+    UI.Window.Title = title
+    UI.Window.BG = bg
 end
 
-return Library
+-- ✅ Toggle checkbox
+local function createToggle(label, callback, yOffset)
+    local box = Drawing.new("Square")
+    box.Size = Vector2.new(15, 15)
+    box.Position = UI.Window.BG.Position + Vector2.new(10, yOffset)
+    box.Color = Color3.fromRGB(60, 60, 60)
+    box.Filled = true
+
+    local txt = Drawing.new("Text")
+    txt.Text = label
+    txt.Size = 15
+    txt.Position = box.Position + Vector2.new(20, -2)
+    txt.Color = Color3.fromRGB(255, 255, 255)
+
+    local state = false
+
+    InputService.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if mouse.X >= box.Position.X and mouse.X <= box.Position.X + box.Size.X and
+               mouse.Y >= box.Position.Y and mouse.Y <= box.Position.Y + box.Size.Y then
+                state = not state
+                box.Color = state and Color3.fromRGB(0, 200, 100) or Color3.fromRGB(60, 60, 60)
+                callback(state)
+            end
+        end
+    end)
+end
+
+-- 📉 Slider
+local function createSlider(label, min, max, default, callback, yOffset)
+    local bar = Drawing.new("Square")
+    bar.Size = Vector2.new(200, 5)
+    bar.Position = UI.Window.BG.Position + Vector2.new(10, yOffset)
+    bar.Color = Color3.fromRGB(100, 100, 100)
+    bar.Filled = true
+
+    local fill = Drawing.new("Square")
+    fill.Size = Vector2.new((default - min)/(max - min) * bar.Size.X, 5)
+    fill.Position = bar.Position
+    fill.Color = Color3.fromRGB(0, 150, 255)
+    fill.Filled = true
+
+    local txt = Drawing.new("Text")
+    txt.Text = label .. ": " .. tostring(default)
+    txt.Size = 15
+    txt.Position = bar.Position + Vector2.new(0, -18)
+    txt.Color = Color3.fromRGB(255, 255, 255)
+
+    InputService.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if mouse.X >= bar.Position.X and mouse.X <= bar.Position.X + bar.Size.X and
+               mouse.Y >= bar.Position.Y and mouse.Y <= bar.Position.Y + bar.Size.Y then
+                local conn
+                conn = RunService.RenderStepped:Connect(function()
+                    if not InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+                        conn:Disconnect()
+                    end
+                    local mouseX = math.clamp(mouse.X, bar.Position.X, bar.Position.X + bar.Size.X)
+                    local ratio = (mouseX - bar.Position.X) / bar.Size.X
+                    local val = math.floor((min + (max - min) * ratio) * 10) / 10
+                    fill.Size = Vector2.new(bar.Size.X * ratio, 5)
+                    txt.Text = label .. ": " .. tostring(val)
+                    callback(val)
+                end)
+            end
+        end
+    end)
+end
+
+-- 🧩 Dropdown
+local function createDropdown(label, options, default, callback, yOffset)
+    local current = default
+    local txt = Drawing.new("Text")
+    txt.Text = label .. ": " .. default
+    txt.Size = 15
+    txt.Position = UI.Window.BG.Position + Vector2.new(10, yOffset)
+    txt.Color = Color3.fromRGB(255, 255, 255)
+
+    InputService.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if mouse.X >= txt.Position.X and mouse.X <= txt.Position.X + 200 and
+               mouse.Y >= txt.Position.Y and mouse.Y <= txt.Position.Y + 20 then
+                local nextIndex = table.find(options, current) + 1
+                if nextIndex > #options then nextIndex = 1 end
+                current = options[nextIndex]
+                txt.Text = label .. ": " .. current
+                callback(current)
+            end
+        end
+    end)
+end
+
+RunService.RenderStepped:Connect(function()
+    UI.Window.Title.Visible = UI.Visible
+    UI.Window.BG.Visible = UI.Visible
+end)
